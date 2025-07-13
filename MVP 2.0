@@ -1,0 +1,97 @@
+# ✅ Install dependencies
+!pip install google-generativeai beautifulsoup4 requests
+!pip install google-generativeai requests
+import os
+import re
+import requests
+import google.generativeai as genai
+from urllib.parse import quote_plus
+
+# === API Keys ===
+GEMINI_API_KEY = "AIzaSyBdZ_bGOCjp-rBFmjBewASyaOzycmpX7Lk"
+SERP_API_KEY = "44c188cc80905d6a93fa84305d591a0140afb7fda6d7c4a1cc325910eb286904"
+
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+
+# === Form Input ===
+form_data = {
+    "fullName": "Alex Doe",
+    "school": "University of Michigan",
+    "outreachGoal": "get career advice in consulting",
+    "Target Role/Title": "Consultant",
+    "Target Companies": "McKinsey, Bain, BCG",
+    "Shared Interest": "data storytelling",
+    "clubs": "Consulting Club"
+}
+
+# === Build Google Search Query ===
+role = quote_plus(form_data["Target Role/Title"])
+companies = [c.strip() for c in form_data["Target Companies"].split(",") if c.strip()]
+school = quote_plus(form_data["school"])
+company = quote_plus(companies[0]) if companies else ""
+query = f'site:linkedin.com/in {role} {company} {school}'
+
+# === Call SerpAPI ===
+def get_linkedin_profiles_from_serpapi(query, api_key):
+    params = {
+        "engine": "google",
+        "q": query,
+        "api_key": api_key
+    }
+    response = requests.get("https://serpapi.com/search", params=params)
+    data = response.json()
+
+    links = []
+    for result in data.get("organic_results", []):
+        link = result.get("link", "")
+        if re.match(r"https://www\.linkedin\.com/in/[a-zA-Z0-9\-_%]+", link):
+            links.append(link)
+        if len(links) >= 10:
+            break
+    return links
+
+linkedin_links = get_linkedin_profiles_from_serpapi(query, SERP_API_KEY)
+
+# === Gemini Email Generator ===
+def generate_email(contact_name, linkedin_url):
+    prompt = f"""
+Write a short, warm cold email from {form_data['fullName']}, a student at {form_data['school']}, to {contact_name}, a professional at {companies[0]}.
+
+Context:
+- The student's goal: {form_data['outreachGoal']}
+- Shared interest: {form_data['Shared Interest']}
+- Club/Org affiliations: {form_data['clubs']}
+- The LinkedIn URL: {linkedin_url}
+
+Instructions:
+- Keep it under 150 words
+- Do not mention scraping or automation
+- Make it genuine, friendly, and respectful
+- Begin with: "Hi {contact_name}, I came across your profile and noticed we share an interest in {form_data['Shared Interest']}..."
+    """.strip()
+
+    model = genai.GenerativeModel("models/gemini-1.5-flash")
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
+# === Generate and Print Emails ===
+print("✅ Cold Outreach Emails Generated:\n")
+
+def extract_name_from_linkedin_url(url):
+    match = re.search(r"linkedin\.com/in/([a-zA-Z0-9\-_%]+)", url)
+    if match:
+        name = match.group(1).replace('-', ' ').replace('_', ' ').title()
+        return name
+    return "Contact"
+
+
+if not linkedin_links:
+    print("⚠️ No LinkedIn links found. Try a broader company/role/school combo.")
+else:
+    for i, link in enumerate(linkedin_links):
+        name = extract_name_from_linkedin_url(link)
+        email_body = generate_email(name, link)
+        print(f"--- Email to {name} ({link}) ---")
+        print(email_body)
+        print("\n" + "-"*70 + "\n")
