@@ -1,97 +1,80 @@
-# ✅ Install dependencies
-!pip install google-generativeai beautifulsoup4 requests
-!pip install google-generativeai requests
 import os
-import re
-import requests
-import google.generativeai as genai
-from urllib.parse import quote_plus
+import base64
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import create_client, Client
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 
-# === API Keys ===
-GEMINI_API_KEY = "AIzaSyBdZ_bGOCjp-rBFmjBewASyaOzycmpX7Lk"
-SERP_API_KEY = "44c188cc80905d6a93fa84305d591a0140afb7fda6d7c4a1cc325910eb286904"
+# Load env vars
+from dotenv import load_dotenv
+load_dotenv()
 
-# Configure Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# === Form Input ===
-form_data = {
-    "fullName": "Alex Doe",
-    "school": "University of Michigan",
-    "outreachGoal": "get career advice in consulting",
-    "Target Role/Title": "Consultant",
-    "Target Companies": "McKinsey, Bain, BCG",
-    "Shared Interest": "data storytelling",
-    "clubs": "Consulting Club"
-}
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-# === Build Google Search Query ===
-role = quote_plus(form_data["Target Role/Title"])
-companies = [c.strip() for c in form_data["Target Companies"].split(",") if c.strip()]
-school = quote_plus(form_data["school"])
-company = quote_plus(companies[0]) if companies else ""
-query = f'site:linkedin.com/in {role} {company} {school}'
+app = FastAPI()
 
-# === Call SerpAPI ===
-def get_linkedin_profiles_from_serpapi(query, api_key):
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": api_key
-    }
-    response = requests.get("https://serpapi.com/search", params=params)
-    data = response.json()
+# CORS - adjust origins as needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    links = []
-    for result in data.get("organic_results", []):
-        link = result.get("link", "")
-        if re.match(r"https://www\.linkedin\.com/in/[a-zA-Z0-9\-_%]+", link):
-            links.append(link)
-        if len(links) >= 10:
-            break
-    return links
+# Pydantic models for request bodies
+class GenerateRequest(BaseModel):
+    linkedin_url: str
+    user_id: str
+    # add more fields if needed for generation
 
-linkedin_links = get_linkedin_profiles_from_serpapi(query, SERP_API_KEY)
+class SendEmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+    user_id: str
 
-# === Gemini Email Generator ===
-def generate_email(contact_name, linkedin_url):
-    prompt = f"""
-Write a short, warm cold email from {form_data['fullName']}, a student at {form_data['school']}, to {contact_name}, a professional at {companies[0]}.
+@app.post("/generate")
+async def generate_email(req: GenerateRequest):
+    # Placeholder for your existing Gemini/GPT + scraping code
+    # Return fake response for now
+    return {"emails": ["example1@example.com", "example2@example.com"]}
 
-Context:
-- The student's goal: {form_data['outreachGoal']}
-- Shared interest: {form_data['Shared Interest']}
-- Club/Org affiliations: {form_data['clubs']}
-- The LinkedIn URL: {linkedin_url}
+@app.post("/send-email")
+async def send_email(req: SendEmailRequest):
+    try:
+        # Get tokens from Supabase for this user_id
+        token_resp = supabase.table("google_tokens").select("*").eq("user_id", req.user_id).single().execute()
+        if token_resp.error or not token_resp.data:
+            raise HTTPException(status_code=400, detail="No Google OAuth tokens found for user.")
+        tokens = token_resp.data
 
-Instructions:
-- Keep it under 150 words
-- Do not mention scraping or automation
-- Make it genuine, friendly, and respectful
-- Begin with: "Hi {contact_name}, I came across your profile and noticed we share an interest in {form_data['Shared Interest']}..."
-    """.strip()
+        creds = Credentials(
+            None,
+            refresh_token=tokens["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET,
+        )
+        creds.refresh(Request())
 
-    model = genai.GenerativeModel("models/gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text.strip()
+        service = build("gmail", "v1", credentials=creds)
+        raw_message = f"To: {req.to}\nSubject: {req.subject}\n\n{req.body}"
+        encoded_message = base64.urlsafe_b64encode(raw_message.encode("utf-8")).decode()
 
-# === Generate and Print Emails ===
-print("✅ Cold Outreach Emails Generated:\n")
+        message = {"raw": encoded_message}
 
-def extract_name_from_linkedin_url(url):
-    match = re.search(r"linkedin\.com/in/([a-zA-Z0-9\-_%]+)", url)
-    if match:
-        name = match.group(1).replace('-', ' ').replace('_', ' ').title()
-        return name
-    return "Contact"
+        send_result = service.users().messages().send(userId="me", body=message).execute()
 
+        return {"status": "sent", "messageId": send_result["id"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-if not linkedin_links:
-    print("⚠️ No LinkedIn links found. Try a broader company/role/school combo.")
-else:
-    for i, link in enumerate(linkedin_links):
-        name = extract_name_from_linkedin_url(link)
-        email_body = generate_email(name, link)
-        print(f"--- Email to {name} ({link}) ---")
-        print(email_body)
-        print("\n" + "-"*70 + "\n")
