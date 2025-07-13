@@ -7,11 +7,11 @@ services:
     startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
     envVars:
       - key: SUPABASE_URL
-        value: https://fqmmrpympcikebspgrbn.supabase.co
+        value: "https://fqmmrpympcikebspgrbn.supabase.co"
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxbW1ycHltcGNpa2Vic3BncmJuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjI4NjMyNCwiZXhwIjoyMDY3ODYyMzI0fQ.HjKRMDrUqDD6OAG2vC40hVXw8KF3hSpZVUDpFlWuH54
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxbW1ycHltcGNpa2Vic3BncmJuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MjI4NjMyNCwiZXhwIjoyMDY3ODYyMzI0fQ.HjKRMDrUqDD6OAG2vC40hVXw8KF3hSpZVUDpFlWuH54"
       - key: GOOGLE_CLIENT_ID
-        value: 1007329386500-d2nu0g2hb9h2k0oaqo9g9hf15nfno9jo.apps.googleusercontent.com
+        value: "1007329386500-d2nu0g2hb9h2k0oaqo9g9hf15nfno9jo.apps.googleusercontent.com"
       - key: GOOGLE_CLIENT_SECRET
-        value: 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
-      # Add other env vars if needed here
+        value: "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"
+
