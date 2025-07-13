@@ -1,0 +1,132 @@
+# ✅ Install necessary packages
+!pip install fastapi uvicorn pyngrok python-dotenv google-generativeai supabase requests nest_asyncio
+
+# === Colab Compatibility ===
+import nest_asyncio
+nest_asyncio.apply()
+
+import os
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from supabase import create_client
+import google.generativeai as genai
+import re
+import requests
+from pyngrok import ngrok
+
+# === CONFIGURATION ===
+GEMINI_API_KEY = "AIzaSyBdZ_bGOCjp-rBFmjBewASyaOzycmpX7Lk"
+SERP_API_KEY = "44c188cc80905d6a93fa84305d591a0140afb7fda6d7c4a1cc325910eb286904"
+SUPABASE_URL = "https://ktosszqeupxekzjqwjqc.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = "sbp_cf0a955d20f4fd9e2c8a71093aa53356f507d2cf"
+
+genai.configure(api_key=GEMINI_API_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+gemini = genai.GenerativeModel("models/gemini-1.5-flash")
+
+app = FastAPI()
+
+# Optional: allow all CORS (for testing frontend)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class GenerationRequest(BaseModel):
+    full_name: str
+    school: str
+    target_role: str
+    target_companies: str
+    outreach_goal: str
+    shared_interest: str = None
+    clubs: str = None
+    user_id: str
+
+def search_linkedin(query):
+    params = {
+        "engine": "google",
+        "q": query,
+        "api_key": SERP_API_KEY
+    }
+    res = requests.get("https://serpapi.com/search", params=params).json()
+    results = []
+    for r in res.get("organic_results", []):
+        link = r.get("link", "")
+        if "linkedin.com/in/" in link:
+            results.append({
+                "link": link,
+                "snippet": r.get("snippet", "")
+            })
+        if len(results) >= 5:
+            break
+    return results
+
+def extract_name(url):
+    match = re.search(r"linkedin\.com/in/([^/?#]+)", url)
+    if match:
+        return match.group(1).replace("-", " ").title()
+    return "Contact"
+
+def generate_emails(user):
+    query = f"site:linkedin.com/in {user['target_role']} {user['target_companies'].split(',')[0]} {user['school']}"
+    profiles = search_linkedin(query)
+    emails = []
+
+    for profile in profiles:
+        name = extract_name(profile["link"])
+        shared_interest = user['shared_interest'] or "the field you're in"
+
+        prompt = f"""
+Write a personalized cold email under 150 words.
+
+Sender: {user['full_name']}, student at {user['school']}
+Recipient: {name} ({profile['link']})
+Goal: {user['outreach_goal']}
+Shared interest: {shared_interest}
+Clubs: {user.get('clubs', '')}
+Contact background: {profile['snippet']}
+
+Email must:
+- Start with: "Hi {name}, I came across your profile and noticed we share an interest in {shared_interest}..."
+- Be warm, respectful, and human
+- Feel unique and conversational
+- Avoid generic AI tone
+- Not mention scraping or automation
+"""
+
+        ai_response = gemini.generate_content(prompt)
+        emails.append({
+            "contact_name": name,
+            "linkedin_url": profile["link"],
+            "snippet": profile["snippet"],
+            "email_text": ai_response.text.strip()
+        })
+
+    return emails
+
+@app.post("/generate")
+def generate(request: GenerationRequest):
+    try:
+        emails = generate_emails(request.dict())
+        supabase.table("email_generations").insert({
+            "user_id": request.user_id,
+            "input_data": request.dict(),
+            "results": emails
+        }).execute()
+        return { "emails": emails }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# === START THE SERVER ===
+from pyngrok import conf
+conf.get_default().auth_token = "2zku5Z61HfWAguJt5wzcTTGZV01_2qZuxpLzGm1vuyYFK2SUH"
+public_url = ngrok.connect(8000)
+print(f"🔥 FastAPI running at: {public_url}/docs")
+
+import uvicorn
+uvicorn.run(app, port=8000)
