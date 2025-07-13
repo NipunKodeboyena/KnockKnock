@@ -1,0 +1,32 @@
+# Python related
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# dotenv environment variables
+.env
+.env.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS files
+.DS_Store
+
+# Logs
+*.log
+
+# Build and dist folders
+build/
+dist/
+*.egg-info/
+.eggs/
