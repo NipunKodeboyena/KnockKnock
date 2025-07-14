@@ -32,12 +32,10 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-
 # Pydantic models
 class GenerateRequest(BaseModel):
     name: str = "there"
     # add more fields later for scraping input
-
 
 class SendEmailRequest(BaseModel):
     to: str
@@ -45,13 +43,15 @@ class SendEmailRequest(BaseModel):
     body: str
     user_id: str
 
+@app.get("/")
+async def root():
+    return {"message": "KnockKnock backend is running"}
 
 @app.post("/generate")
 def generate_email(request: GenerateRequest):
     # TODO: Replace this with actual scraping + Gemini generation logic
     personalized_email = f"Hi {request.name}, I’d love to connect regarding internship opportunities."
     return {"emails": [personalized_email]}
-
 
 @app.post("/send-email")
 def send_email(request: SendEmailRequest):
