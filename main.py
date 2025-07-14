@@ -1,6 +1,7 @@
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from supabase import create_client
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -11,34 +12,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# FastAPI app
+logging.basicConfig(level=logging.INFO)
+
 app = FastAPI()
 
-# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can restrict this to your frontend domain later
+    allow_origins=["*"],  # Restrict in production!
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Supabase setup
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-# Google credentials
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# Pydantic models
 class GenerateRequest(BaseModel):
     name: str = "there"
-    # add more fields later for scraping input
 
 class SendEmailRequest(BaseModel):
-    to: str
+    to: EmailStr
     subject: str
     body: str
     user_id: str
@@ -48,17 +45,17 @@ async def root():
     return {"message": "KnockKnock backend is running"}
 
 @app.post("/generate")
-def generate_email(request: GenerateRequest):
-    # TODO: Replace this with actual scraping + Gemini generation logic
+async def generate_email(request: GenerateRequest):
     personalized_email = f"Hi {request.name}, I’d love to connect regarding internship opportunities."
     return {"emails": [personalized_email]}
 
 @app.post("/send-email")
-def send_email(request: SendEmailRequest):
+async def send_email(request: SendEmailRequest):
     try:
-        # Fetch Gmail refresh token from Supabase
-        tokens = supabase.table("google_tokens").select("*").eq("user_id", request.user_id).single().execute().data
+        tokens_resp = supabase.table("google_tokens").select("*").eq("user_id", request.user_id).single().execute()
+        tokens = tokens_resp.data
         if not tokens or "refresh_token" not in tokens:
+            logging.error(f"Missing refresh token for user {request.user_id}")
             raise HTTPException(status_code=403, detail="Missing refresh token for user")
 
         creds = Credentials(
@@ -70,7 +67,6 @@ def send_email(request: SendEmailRequest):
         )
         creds.refresh(Request())
 
-        # Compose and send email
         service = build("gmail", "v1", credentials=creds)
         raw_message = base64.urlsafe_b64encode(
             f"To:{request.to}\nSubject:{request.subject}\n\n{request.body}".encode("utf-8")
@@ -78,7 +74,8 @@ def send_email(request: SendEmailRequest):
 
         message = {"raw": raw_message}
         service.users().messages().send(userId="me", body=message).execute()
-
+        logging.info(f"Email sent to {request.to} for user {request.user_id}")
         return {"status": "sent"}
     except Exception as e:
+        logging.error(f"Error sending email: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
