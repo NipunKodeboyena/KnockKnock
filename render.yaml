@@ -7,12 +7,13 @@ services:
     startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
     envVars:
       - key: SUPABASE_URL
-        value: "https://fqmmrpympcikebspgrbn.supabase.co"
+        value: https://fqmmrpympcikebspgrbn.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: "YOUR_SUPABASE_SERVICE_ROLE_KEY"
+        value: your-full-service-role-key-here
       - key: GOOGLE_CLIENT_ID
-        value: "1007329386500-d2nu0g2hb9h2k0oaqo9g9hf15nfno9jo.apps.googleusercontent.com"
+        value: 1007329386500-d2nu0g2hb9h2k0oaqo9g9hf15nfno9jo.apps.googleusercontent.com
       - key: GOOGLE_CLIENT_SECRET
-        value: "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"
+        value: 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
+
 
 
